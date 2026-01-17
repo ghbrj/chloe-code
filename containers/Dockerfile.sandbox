@@ -1,0 +1,70 @@
+# -------------------------------------------------
+# containers/Dockerfile.sandbox – Sandbox multi‑runtime
+# -------------------------------------------------
+    FROM ubuntu:22.04
+
+    # ----------------------------------------------------------------------
+    # 1️⃣  Outils de base (wget, gnupg, ca‑certificates, xz‑utils)
+    # ----------------------------------------------------------------------
+    RUN apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            gnupg ca-certificates wget xz-utils && \
+        rm -rf /var/lib/apt/lists/*
+    
+    # ----------------------------------------------------------------------
+    # 2️⃣  Télécharger le binaire officiel de Julia 1.10.6 (aarch64)
+    # ----------------------------------------------------------------------
+    #   - Le lien correct utilise le répertoire « aarch64 » et non « arm64 ».
+    #   - On garde le fichier temporaire dans /tmp pour pouvoir le supprimer après extraction.
+    RUN wget --progress=dot:giga \
+            https://julialang-s3.julialang.org/bin/linux/aarch64/1.10/julia-1.10.6-linux-aarch64.tar.gz \
+            -O /tmp/julia.tar.gz
+    
+    # ----------------------------------------------------------------------
+    # 3️⃣  Extraire Julia dans /opt et créer le lien /usr/local/bin/julia
+    # ----------------------------------------------------------------------
+    RUN mkdir -p /opt && \
+        tar -xzf /tmp/julia.tar.gz -C /opt && \
+        ln -s /opt/julia-1.10.6/bin/julia /usr/local/bin/julia && \
+        rm -f /tmp/julia.tar.gz
+    
+    # ----------------------------------------------------------------------
+    # 4️⃣  Installation des autres langages / outils (Python, Node, Go, R, LaTeX, PostgreSQL)
+    # ----------------------------------------------------------------------
+    RUN apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            # Python 3 (3.10 dans Ubuntu 22.04) + pip + venv
+            python3 python3-pip python3-venv \
+            # Node.js + npm (LTS 18.x dans les dépôts Ubuntu)
+            nodejs npm \
+            # Go (nom du paquet dans Ubuntu)
+            golang \
+            # R (core + recommended packages)
+            r-base r-recommended \
+            # LaTeX – uniquement le nécessaire pour compiler des .tex/.pdf
+            texlive-latex-recommended texlive-fonts-recommended \
+            # PostgreSQL client (psql)
+            postgresql-client \
+            # Certificats SSL (obligatoire pour les appels HTTPS)
+            ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+    
+    # ----------------------------------------------------------------------
+    # 5️⃣  Répertoire de travail partagé avec le host
+    # ----------------------------------------------------------------------
+    WORKDIR /workspace
+    
+    # ----------------------------------------------------------------------
+    # 6️⃣  Création d’un utilisateur non‑root (sécurité)
+    # ----------------------------------------------------------------------
+    ARG USERNAME=guest
+    ARG UID=1000
+    ARG GID=1000
+    RUN groupadd -g ${GID} ${USERNAME} && \
+        useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USERNAME}
+    USER ${USERNAME}
+    
+    # ----------------------------------------------------------------------
+    # 7️⃣  Aucun port exposé – le sandbox sera invoqué via `docker exec` depuis le backend
+    # ----------------------------------------------------------------------
+    # (pas de directive EXPOSE)

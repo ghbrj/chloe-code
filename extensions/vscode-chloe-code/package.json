@@ -1,0 +1,77 @@
+{
+  "name": "chloe-code",
+  "displayName": "Chloe‑Code",
+  "description": "Assistant IA local pour le développement (R, Python, Julia, JS/TS, SQL, Bash, LaTeX)",
+  "version": "0.1.0",
+  "publisher": "ghbrj",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:chloeCode.generate",
+    "onCommand:chloeCode.updateModel",
+    "onCommand:chloeCode.updateKB",
+    "onCommand:chloeCode.cleanKB"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "chloeCode.generate",
+        "title": "Chloe‑Code : Générer du code"
+      },
+      {
+        "command": "chloeCode.updateModel",
+        "title": "Chloe‑Code : Mettre à jour le modèle"
+      },
+      {
+        "command": "chloeCode.updateKB",
+        "title": "Chloe‑Code : Mettre à jour la base de connaissances"
+      },
+      {
+        "command": "chloeCode.cleanKB",
+        "title": "Chloe‑Code : Nettoyer la base de connaissances"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Chloe‑Code Configuration",
+      "properties": {
+        "chloeCode.endpoint": {
+          "type": "string",
+          "default": "http://localhost:8000/v1",
+          "description": "URL de l’API FastAPI."
+        },
+        "chloeCode.validateOnInsert": {
+          "type": "boolean",
+          "default": true,
+          "description": "Exécuter les tests dans le sandbox avant insertion."
+        },
+        "chloeCode.blockDangerous": {
+          "type": "boolean",
+          "default": false,
+          "description": "Bloquer les constructions dangereuses (eval, exec, os.system)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node ./node_modules/@vscode/test-electron/out/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.92.0",
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^2.28.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.2"
+  }
+}

@@ -1,0 +1,42 @@
+# -------------------------------------------------
+# docker-compose.yml – Orchestration des services
+# -------------------------------------------------
+services:
+  api:
+    build:
+      context: ./backend          # le dossier contenant le Dockerfile
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./backend:/app            # monte le code source (facultatif, pour hot‑reload)
+    depends_on:
+      - ollama
+      - chroma
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./models:/root/.ollama/models
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data/chroma:/chroma
+
+  sandbox:
+    build:
+      context: ./containers
+      dockerfile: Dockerfile.sandbox
+    # pas de ports exposés
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: "4g"
