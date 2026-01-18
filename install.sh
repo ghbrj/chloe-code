@@ -58,17 +58,7 @@ if ! pgrep -x ollama >/dev/null 2>&1; then
     sleep 2
 fi
 
-# ---------- 3. Pull du modèle Llama‑2‑13B‑Chat (Q4_0) -------------------------
-MODEL_NAME="llama2:13b-chat-q4_0"
-log "Vérification du modèle $MODEL_NAME …"
-if ! ollama list | grep -q "$MODEL_NAME"; then
-    log "Téléchargement du modèle $MODEL_NAME (cela peut prendre plusieurs minutes)…"
-    ollama pull "$MODEL_NAME"
-else
-    log "Modèle $MODEL_NAME déjà présent."
-fi
-
-# ---------- 4. Environnement Python virtuel ----------------------------------
+# ---------- 3. Environnement Python virtuel ----------------------------------
 PYENV_DIR=".venv"
 log "Création / activation de l’environnement virtuel Python ($PYENV_DIR)…"
 if [[ ! -d "$PYENV_DIR" ]]; then
@@ -81,18 +71,31 @@ log "Installation des dépendances Python (FastAPI, loguru, etc.)…"
 pip install --upgrade pip setuptools wheel
 pip install -r backend/requirements.txt
 
-# ---------- 5. Installation des dépendances Node (extension VS Code) ----------
+# ---------- 4. Installation des dépendances Node (extension VS Code) ----------
 log "Installation des dépendances Node pour l’extension VS Code…"
 pushd extensions/vscode-chloe-code >/dev/null
 npm ci
 popd >/dev/null
 
-# ---------- 6. Construction & lancement des services Docker --------------------
+# ---------- 5 Construction & lancement des services Docker --------------------
 log "Construction des images Docker (API + Sandbox)…"
 docker compose build
 
 log "Lancement des services (api, ollama, chroma, sandbox)…"
 docker compose up -d
+
+# ---------- 6. Pull du modèle Llama‑2‑13B‑Chat (Q4_0) -------------------------
+MODEL_NAME="llama2:13b-chat-q4_0"
+log "Vérification du modèle $MODEL_NAME dans le conteneur Ollama …"
+
+# Utiliser docker compose exec pour interroger le conteneur
+if ! docker compose exec -T ollama ollama list | grep -q "$MODEL_NAME"; then
+    log "Téléchargement du modèle $MODEL_NAME (cela peut prendre plusieurs minutes)…"
+    # Le -T désactive l’allocation pseudo‑TTY (nécessaire dans les scripts)
+    docker compose exec -T ollama ollama pull "$MODEL_NAME"
+else
+    log "Modèle $MODEL_NAME déjà présent dans le conteneur Ollama."
+fi
 
 # Attendre que l’API soit prête (poll /healthz)
 log "Attente du health‑check de l’API (max 30 s)…"

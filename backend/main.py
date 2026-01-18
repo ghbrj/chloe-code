@@ -1,104 +1,119 @@
 # backend/main.py
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 import time
 
-# Import des schémas que nous avons déjà définis (à créer dans l'étape suivante)
-from .schemas import (
+# ----- IMPORTS ABSOLUS -----
+from schemas import (
     InferRequest, InferResponse,
     SearchRequest, SearchResponse,
     RunTestsRequest, RunTestsResult,
-    UpdateModelResponse, HealthResponse
+    UpdateModelResponse, HealthResponse,
 )
+from utils.preprocess import build_prompt
+from utils.postprocess import postprocess_code
+from utils.ollama_client import generate_code, OllamaError
+from utils.chroma_client import search_kb, add_documents
+from utils.sandbox_client import run_tests_in_sandbox, SandboxError
+from logger_util import log_request, log_response, log_error
 
-# Import des utilitaires (à créer dans les étapes suivantes)
-# from .utils.preprocess import preprocess_prompt
-# from .utils.postprocess import postprocess_code
-# from .utils.ollama_client import generate_code
-# from .utils.chroma_client import search_kb, add_documents
-# from .utils.sandbox_client import run_tests_in_sandbox
-
-# Import du logger
-# from .logging import logger
+# ---------------------------
 
 app = FastAPI(title="chloe‑code API", version="0.1.0")
 
-# ----------------------------------------------------------------------
-# 1️⃣  Health‑check
-# ----------------------------------------------------------------------
+# -------------------------------------------------
+# Health‑check
+# -------------------------------------------------
 @app.get("/healthz", response_model=HealthResponse)
 async def health_check():
     return HealthResponse()
 
 
-# ----------------------------------------------------------------------
-# 2️⃣  Génération de code (POST /v1/infer)
-# ----------------------------------------------------------------------
+# -------------------------------------------------
+# 1️⃣  Génération de code
+# -------------------------------------------------
 @app.post("/v1/infer", response_model=InferResponse)
-async def infer(request: InferRequest):
+async def infer(req: InferRequest):
     start = time.time()
-    # 1. Pré‑processing du prompt
-    # processed_prompt = preprocess_prompt(request.prompt, request.file_path, request.language)
+    log_request("infer", req.dict())
+    try:
+        prompt = build_prompt(req.prompt, req.file_path, req.language)
+        raw = generate_code(prompt)                     # Ollama
+        code, warning = postprocess_code(
+            raw, req.language or "python", block_dangerous=False
+        )
+        latency = int((time.time() - start) * 1000)
+        resp = InferResponse(
+            code=code,
+            explanation=None,
+            latency_ms=latency,
+            warning=warning,
+        )
+        log_response("infer", resp.dict(), latency)
+        return resp
+    except OllamaError as exc:
+        log_error("infer", str(exc))
+        raise HTTPException(status_code=502, detail=str(exc))
 
-    # 2. Appel à Ollama (LLM)
-    # raw_output = await generate_code(processed_prompt)
 
-    # 3. Post‑processing du code (strip fences, formatters, warnings)
-    # code, warning = postprocess_code(raw_output)
-
-    # 4. Log + métriques
-    latency_ms = int((time.time() - start) * 1000)
-    # logger.info("infer", prompt=request.prompt, latency_ms=latency_ms)
-
-    # 5. Réponse (placeholder tant que les utils ne sont pas implémentés)
-    return InferResponse(
-        code="# Code généré (placeholder)\nprint('Hello, world!')",
-        explanation="Placeholder – implémentation du LLM à venir.",
-        latency_ms=latency_ms,
-        warning=None
-    )
-
-
-# ----------------------------------------------------------------------
-# 3️⃣  Recherche dans la base de connaissances (GET /v1/search)
-# ----------------------------------------------------------------------
+# -------------------------------------------------
+# 2️⃣  Recherche KB
+# -------------------------------------------------
 @app.get("/v1/search", response_model=SearchResponse)
 async def search(q: str, k: int = 5):
-    # results = await search_kb(q, k)
-    # placeholder
-    dummy = [{
-        "title": "Doc example",
-        "snippet": "def foo(): pass",
-        "url": None,
-        "score": 0.95
-    } for _ in range(k)]
-    return SearchResponse(results=dummy)
+    start = time.time()
+    log_request("search", {"q": q, "k": k})
+    results = search_kb(q, k)
+    resp = SearchResponse(results=results)
+    latency = int((time.time() - start) * 1000)
+    log_response("search", resp.dict(), latency)
+    return resp
 
 
-# ----------------------------------------------------------------------
-# 4️⃣  Exécution de tests dans le sandbox (POST /v1/run-tests)
-# ----------------------------------------------------------------------
+# -------------------------------------------------
+# 3️⃣  Exécution de tests sandbox
+# -------------------------------------------------
 @app.post("/v1/run-tests", response_model=RunTestsResult)
-async def run_tests(payload: RunTestsRequest):
-    # result = await run_tests_in_sandbox(payload.code, payload.language)
-    # placeholder
-    return RunTestsResult(
-        status="passed",
-        log="All tests passed (placeholder).",
-        duration_ms=123
-    )
+async def run_tests(req: RunTestsRequest):
+    start = time.time()
+    log_request("run-tests", req.dict())
+    try:
+        status, log, duration = run_tests_in_sandbox(req.code, req.language)
+        resp = RunTestsResult(
+            status=status,
+            log=log,
+            duration_ms=duration,
+        )
+        latency = int((time.time() - start) * 1000)
+        log_response("run-tests", resp.dict(), latency)
+        return resp
+    except SandboxError as exc:
+        log_error("run-tests", str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
-# ----------------------------------------------------------------------
-# 5️⃣  Mise à jour du modèle LLM (POST /v1/update-model)
-# ----------------------------------------------------------------------
+# -------------------------------------------------
+# 4️⃣  Mise à jour du modèle (pull‑on‑demand)
+# -------------------------------------------------
 @app.post("/v1/update-model", response_model=UpdateModelResponse)
 async def update_model():
-    # Ici on invoque `docker exec` ou `ollama pull` depuis le conteneur
-    # placeholder
-    return UpdateModelResponse(
-        message="Model update triggered (placeholder).",
-        model="llama2-13b-chat-q4_0",
-        version=None
-    )
+    # Simple appel à Ollama via docker exec
+    import subprocess, shlex
+    try:
+        subprocess.run(
+            "docker exec chloe-code-ollama-1 ollama pull llama2-13b-chat-q4_0",
+            shell=True,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return UpdateModelResponse(
+            message="Model updated",
+            model="llama2-13b-chat-q4_0",
+            version=None,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ollama pull failed: {exc.stderr.decode()}",
+        )

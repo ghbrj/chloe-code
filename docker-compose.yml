@@ -10,8 +10,12 @@ services:
       - "8000:8000"
     environment:
       - OLLAMA_HOST=http://ollama:11434
+      - CHROMA_DB_PATH=/data/chroma   # monte le volume ci‑dessous
+      - LOG_ROOT=/app/logs 
     volumes:
       - ./backend:/app            # monte le code source (facultatif, pour hot‑reload)
+      - ./data/chroma:/data/chroma    # persistance du vecteur‑store
+      - ./logs:/app/logs 
     depends_on:
       - ollama
       - chroma
